@@ -6,6 +6,7 @@ OSB (Operating System Basic) is a from-scratch, DOS-like operating system projec
 - [Architecture](architecture.md) — system layering and module responsibilities
 - [Repository map](repository-map.md) — projects in the OSB workspace and their roles
 - [Building and running](building-and-running.md) — prerequisites, build pipeline, and QEMU usage
+- [Versioning, release policy and GitHub Actions](versioning-and-release.md) — SemVer, codenames, Git Flow, release publication, ISO generation
 
 ## Key characteristics
 - **DOS-like model:** drive letters (e.g. `A:`), `\` paths, internal/external command model, `INT 21h`-style syscall ABI.
