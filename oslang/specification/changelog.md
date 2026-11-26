@@ -2,6 +2,17 @@
 
 Curated highlights by version. For exact semantics, see the corresponding spec in `osb.oslang/`.
 
+## 0.8
+- Formalizes object identity and equality by value category: arrays, class instances, closures and enum sets are compared by identity; `NULL` equals only `NULL`; booleans, numbers and strings compare by value/content.
+- Intentional breaking change: closures now compare by identity — a closure is equal to itself (reflexive) and distinct closures remain unequal. Previously closures always compared unequal, including a closure compared with itself.
+- No syntax, operator, or standard-library additions; otherwise preserves OSLANG 0.73 semantics.
+
+## 0.7
+- Terminal and interactive application support (primary integration target: KISS.NET).
+- New namespaces: `OSL.CONSOLE`, `OSL.APP` (existing `OSL.FILE` retained).
+- Full-screen applications, keyboard event input, special keys, cursor positioning, color control, efficient rendering, resize detection, interactive terminal mode, alternate screen, text file editing, command-line arguments, error handling and event-loop applications.
+- Additive / non-breaking.
+
 ## 0.62
 - Data interchange namespaces: `OSL.JSON`, `OSL.CSV`, `OSL.XML`, `OSL.CNF`
 - Networking namespace: `OSB.NET` (`PING`, `DOWN`)

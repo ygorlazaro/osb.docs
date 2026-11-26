@@ -63,8 +63,13 @@ Generation 0 (current) codename is **Olorun** (Yorùbá mythology — the suprem
 1. Development work is integrated into `develop`.
 2. Create `release/<version>` from `develop`, where `<version>` matches the value declared in `version.json`.
 3. Update `version.json` (`version`, `release: true`) on the release branch.
-4. Stabilize: run the full build, tests and the release validation (`scripts/validate-version.cake --strict-release`). Once the codename is resolved, the validator checks generation/codename consistency.
-5. Merge `release/<version>` into `master` (via PR), then back into `develop`, preserving final adjustments (so release-branch fixes are not lost on `develop`).
+4. Stabilize: run the full build, tests and the release validation
+   (`scripts/validate-version.cake --strictRelease`). The codename is fixed in
+   `version.json` (generation 0 -> Olorun) and the validator checks
+   generation/codename consistency against the codename registry.
+5. Merge `release/<version>` into `master` (via PR), then back into `develop`,
+   preserving final adjustments (so release-branch fixes are not lost on
+   `develop`).
 
 Direct merges from `develop` to `master` are not used; releases always flow through a `release/<version>` branch.
 
@@ -145,6 +150,20 @@ explicitly rejects any origin other than `refs/heads/master`, then runs
 Permissions: `contents: write`; concurrency group serializes same-version publication (`cancel-in-progress: false`).
 
 `workflow_dispatch` cannot bypass branch validation, metadata validation or release-origin conditions, and creates no alternate publication path; publication remains unauthorized on any branch other than `master`.
+
+### First coordinated release — sibling repository branch prerequisites
+
+The first coordinated release has a bootstrapping constraint worth documenting explicitly: `version.json` (the authoritative release metadata) lives on `develop`, but **does not exist on `master`** in any component repo. A normal checkout defaults siblings to `master`, where `release.sh` would find no `version.json`. Meanwhile `release.sh` requires every sibling repo to sit on a clean tree on `master` or `release/<version>` (see `scripts/release.sh`, section [3/7]).
+
+Therefore the first release must be prepared by coordinated branch preparation across all five component repositories, in this exact sequence:
+
+1. On `develop`, confirm every component's `version.json` declares the target platform version (`0.1.0`), generation `0`, codename `Olorun`, and `release: false`.
+2. In each of the five component repos (`osb.kernel`, `osb.shell`, `osb.core`, `osbkt`, `osb.oslang`), create `release/0.1.0` from `develop` (the branch carrying `version.json`).
+3. Verify each `release/0.1.0` branch has a clean working tree and its `version.json` validates with the Cake validator (`--expectCodename=Olorun`).
+4. Run `DRY_RUN=1 ./scripts/release.sh` from `osb.kernel`'s `release/0.1.0` branch. All five siblings resolve at `release/0.1.0`, the manifest is generated and validated, and no publication occurs.
+5. Only after the dry-run succeeds, proceed to publication: merge `release/0.1.0` into `master` in each repo (which brings `version.json` to `master`), then `release.sh` publication on `osb.kernel`/`master` creates the tag and GitHub Release.
+
+`release.sh` performs all of these checks itself (clean tree, branch ref, `version.json` presence, SemVer, codename registry, manifest with exactly the five components and no `unknown` fields). The dry-run is reproducible from the prepared `release/<version>` state and never reaches publication. Do not weaken these safety checks to make a dry-run succeed on an unprepared `develop` checkout.
 
 ### Component CI (`osb.shell`, `osb.core`, `osbkt`, `osb.oslang`)
 
