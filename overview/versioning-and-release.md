@@ -73,19 +73,9 @@ tags and technical metadata follow an ASCII-compatible English naming convention
 
 ### Generation 0 (current)
 
-The generation 0 codename is **pending an explicit final decision**. The current
-candidates are:
-
-| Candidate | Origin | Notes |
-|-----------|--------|-------|
-| `Olorun` | Yorùbá mythology — the supreme deity / sky-associated creator | Currently the preferred candidate; decision not yet final. |
-| `Ptah` | Egyptian mythology — creator deity, patron of craftsmen and builders | Alternative candidate. |
-
-**Do not hardcode either candidate as definitive.** The codename is recorded in
-`osb.kernel/version.json` under `codename` (currently `null`) and must be set
-explicitly when the decision is made. `codenameCandidates` documents the
-options. Until a decision is recorded, releases identify the version only and
-state that the codename is pending.
+The generation 0 codename is **Olorun** (Yorùbá mythology — the supreme deity /
+sky-associated creator). It is final and recorded in every component's
+`version.json` under `codename`.
 
 ## Git Flow branching model
 
@@ -121,7 +111,7 @@ through a `release/<version>` branch.
    matches the value declared in `version.json`.
 3. Update `version.json` (`version`, `release: true`) on the release branch.
 4. Stabilize: run the full build, tests and the release validation
-   (`scripts/validate-version.py --strict-release` once the codename is set).
+   (`scripts/validate-version.cake --strict-release` once the codename is set).
 5. Merge `release/<version>` into `master` (via PR), then back into `develop`.
 
 Do not introduce artificial version-synchronization commits; a release branch
@@ -135,7 +125,7 @@ single workflow and must:
 
 1. Identify and validate the intended version from `version.json`.
 2. Validate the version against the repository's authoritative version metadata
-   (`scripts/validate-version.py`).
+   (`scripts/validate-version.cake`).
 3. Determine the generation codename.
 4. Build the required OSB components (kernel + userspace programs).
 5. Build the official ISO.
@@ -180,7 +170,7 @@ The official ISO is produced **only** by this release workflow (merge into
 ### `osb.kernel/.github/workflows/ci.yml` — CI on `develop`
 
 Triggers on push/PR to `develop`. Runs:
-- version validation (`scripts/validate-version.py`),
+- version validation (`scripts/validate-version.cake`),
 - `dotnet build` of the freestanding kernel,
 - host unit tests (`dotnet test`),
 - kernel ELF link + Multiboot2 + ABI version check.
@@ -258,8 +248,7 @@ Each OSB component repo declares its version in `version.json` at its root:
   "version": "0.1.0",
   "generation": 0,
   "release": false,
-  "codename": null,
-  "codenameCandidates": ["Olorun", "Ptah"],
+  "codename": "Olorun",
   "repository": "osb-foundation/osb.kernel"
 }
 ```
@@ -267,10 +256,10 @@ Each OSB component repo declares its version in `version.json` at its root:
 - `version` is the SemVer component version (single source of truth; no
   duplicated manual version declarations).
 - `generation` is the MAJOR generation (drives codename lookup).
-- `codename` is the generation codename (`null` until explicitly decided).
+- `codename` is the generation codename (`Olorun` for generation 0).
 - `release` is set `true` only on a release branch.
 
-`scripts/validate-version.py` validates SemVer, `0.y.z` semantics, codename
+`scripts/validate-version.cake` validates SemVer, `0.y.z` semantics, codename
 lookup by generation and `release/<version>` → `version.json` consistency, and
 is invoked by both CI and release workflows.
 
