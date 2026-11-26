@@ -93,6 +93,14 @@ A merge of a release branch into `master` is the official publication trigger. T
 9. Create the GitHub Release titled `OSB <version> — <codename>`.
 10. Attach the ISO and other official artifacts.
 
+### Dry-run mode
+
+`scripts/release.sh` supports `DRY_RUN=1 ./scripts/release.sh`, which runs the complete release *preparation* (metadata validation, version validation, codename validation, release-branch/ref validation, deterministic sibling resolution, manifest generation and validation, required-file checks, release-layout preparation, artifact checks) but **never** performs any publication: no tags, no pushes, no GitHub Releases, no asset uploads, no ISO publication, no merge into `master`, and no remote modification. All publication operations (`git tag`, `git push`, `gh release create`) are structurally gated behind the dry-run exit and cannot be reached by `DRY_RUN=1`.
+
+### Branch / origin guards
+
+`release.yml` explicitly rejects any origin other than `refs/heads/master` (push or `workflow_dispatch`) before publication steps run, and `release.sh` re-checks `branch == master` plus `release: true` in `version.json` independently. `workflow_dispatch` therefore cannot bypass branch validation, metadata validation, or release-origin conditions, and creates no alternate publication path. `develop` never publishes.
+
 Idempotency: re-running the workflow never creates duplicate releases or corrupts existing artifacts.
 Existing tag/release detection: if the tag already targets the current HEAD it is a no-op; if it targets a different commit, the workflow fails rather than overwriting.
 Least-privilege permissions: `contents: write` only (tags + releases); concurrency group serializes publication of the same version (`cancel-in-progress: false`).
@@ -122,8 +130,13 @@ This workflow must **not** publish a stable release or an official ISO.
 
 ### `osb.kernel/.github/workflows/release.yml` — Release on `master`
 
-Triggers on push to `master` and `workflow_dispatch`. Runs `scripts/release.sh`:
+Triggers on push to `master` and `workflow_dispatch`. Before publication it
+explicitly rejects any origin other than `refs/heads/master`, then runs
+`scripts/release.sh`:
 - validates `version.json`,
+- validates the release branch/ref against `version.json`,
+- resolves every sibling at an explicit deterministic commit (no default-branch resolution, never `unknown`),
+- generates and validates `release-manifest-<version>.json`,
 - builds the official ISO,
 - generates checksums + release manifest,
 - creates/pushes the Git tag idempotently,
@@ -131,9 +144,14 @@ Triggers on push to `master` and `workflow_dispatch`. Runs `scripts/release.sh`:
 
 Permissions: `contents: write`; concurrency group serializes same-version publication (`cancel-in-progress: false`).
 
+`workflow_dispatch` cannot bypass branch validation, metadata validation or release-origin conditions, and creates no alternate publication path; publication remains unauthorized on any branch other than `master`.
+
 ### Component CI (`osb.shell`, `osb.core`, `osbkt`, `osb.oslang`)
 
 Each component repo has a `ci.yml` on `develop`/PR that validates its `version.json` (SemVer) and runs `dotnet build` (+ unit tests where applicable).
+
+The shell CI additionally checks out its sibling dependencies (`osbkt`, `osb.core`) side by side, because `Osb.Shell.Userspace.csproj` consumes them by linked sources and fails its `CheckSiblings` target otherwise.
+
 
 ## ISO generation and artifact checksums
 
@@ -146,10 +164,14 @@ The bootable OSB ISO (`osb.iso`) is produced by `osb.kernel/build.sh`:
 
 The ext4 image (drive `A:`) is seeded with `SHELL.EXE` (and ring-3 test programs under `WITH_TESTS=1`) plus PASSWD/SUDOERS/CONF/PROMPT user env slots.
 
+`osb.kernel/build.sh` generates `/OSB/CONF/VERSION.JSON` from all five component `version.json` files via `scripts/generate-metadata.cake` and writes it into the ext4 image. The userspace shell's `VER` command reads this generated artifact at runtime (no hardcoded version table).
+
 The release workflow runs `build.sh` (not develop CI) to produce the official ISO, then:
 - `sha256sum osb.iso osb.img > osb.iso.sha256`,
-- a `release-manifest-<version>.json` records version, codename, generation, commit, branch, build timestamp, and every component's version + exact commit,
-- the ISO, image, checksums file and manifest attached to the GitHub Release.
+- a `release-manifest-<version>.json` records schema, version, codename, generation, commit and branch plus every component's version + exact source commit. It is deterministic (no wall-clock timestamp) and is validated before publication; any manifest containing `unknown` or missing a component is rejected.
+
+The ISO, image, checksums file and manifest are attached to the GitHub Release.
+
 
 ## Cross-repository version coordination
 
@@ -194,27 +216,20 @@ Each OSB component repo declares its version in `version.json` at its root:
 |--------|------------|------|
 | `osb.core` | `osb-foundation/osb.core` | Shared freestanding MiniCoreLib |
 | `osb.kernel` | `osb-foundation/osb.kernel` | Bootable kernel + platform release version |
-| `osb.kernel/Shell/Environment.cs` | `osb-kernel` | Environment slots incl. legacy `VER` slot |
-| `osb.kernel/README.md` | `osb-kernel` | High-level docs (boot defaults include `VER`) |
-| `osb.kernel/Shell/Environment.cs:73` | `osb-kernel` | `Set2(slot, "VER", "0.1.0")` legacy output line |
-| `osb.kernel/scripts/release.sh` | `osb-kernel` | Release publication script (tag, ISO, manifest, GitHub Release) |
+| `osb.kernel/scripts/release.sh` | `osb-kernel` | Release publication script; supports `DRY_RUN=1` (safe preparation, no publication) |
+| `osb.kernel/scripts/generate-metadata.cake` | `osb-kernel` | Cake metadata generator: `--root=<parent> --output=<file>`; strict validation, deterministic output |
 | `osb.kernel/scripts/validate-version.cake` | `osb-kernel` | Cake validator (SemVer, codename registry, strictRelease) |
-| `osb.kernel/tools/mkosbx.py` | `osb-kernel` | Ring-3 header wrapper (mkosbx) |
 | `osb.kernel/scripts/stage-ring3.sh` | `osb-kernel` | Ring-3 program staging (compile_rt3, mkosbx) |
 | `osb.kernel/scripts/ci.sh` | `osb-kernel` | CI: build, unit tests, link, ABI check |
-| `osb.shell/Osb.Shell.Userspace.csproj` | `osb.shell` | Shell EXE userspace |
+| `osb.shell/Osb.Shell.Userspace.csproj` | `osb.shell` | Shell EXE userspace; `CheckSiblings` requires `../osbkt` and `../osb.core` |
+| `osb.shell/Program.Version.cs` | `osb.shell` | Runtime metadata loader: reads `/OSB/CONF/VERSION.JSON`, feeds `VER` |
 | `osb.shell/tests/golden/...` | `osb.shell` | Golden transcript cases (01-ver.out, 99-stress.out, etc.) |
 | `osb.core/src/*.cs` | `osb.core` | MiniCoreLib canonical copy |
-| `osbkt/mkosbx.py` | `osb-kernel` | OSBX packaging (same function, C#/Cake) |
-| `osbkt/tools/check-abi.sh` | `osb-kernel` | ABI v8 check |
+| `osbkt/mkosbx.py` | `osbkt` | OSBX header wrapper (build-critical; Python migration deferred to a future card) |
+| `osbkt/tools/check-abi.sh` | `osbkt` | ABI v8 check |
 | `osb.oslang/engine/build.sh` | `osb.oslang` | NativeAOT engine build (M8.7) |
 | `osb.oslang/engine/host/Host.Osb/build-oslang.sh` | `osb.oslang` | OSLANG native build |
 | `osb.docs/overview/versioning-and-release.md` | `osb.docs` | Documentation (updated) |
 
 ---
 
-### Authoritative version metadata
-
-See `scripts/generate-metadata.cake` (see below) which produces a deterministic
-`osb/generated-metadata.json` consumed by the shell; `release.sh` reads it instead of
-hardcoding version numbers or codename literals.
